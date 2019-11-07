@@ -5,15 +5,11 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
-	"os"
 	"os/exec"
-	"os/signal"
-	"syscall"
 )
 
 const (
 	mixerAPIBase = "https://mixer.com/api/v1"
-	vlcPath      = "/Applications/VLC.app/Contents/MacOS/VLC"
 )
 
 var client = &http.Client{}
@@ -47,24 +43,10 @@ func getChannel(token string) (channel, error) {
 	return c, nil
 }
 
-func openVLC(done <-chan struct{}, manifestPath, title string) error {
-	defer func() {
-		fmt.Println("\rClosing VLC")
-	}()
+func openVLC(manifestPath, title string) error {
+	cmd := exec.Command("open", "-n", "-a", "VLC", manifestPath, "--args", fmt.Sprintf("--input-title-format=%s", title))
 
-	cmd := exec.Command(vlcPath, fmt.Sprintf("--input-title-format=%s", title), manifestPath)
-
-	go func() {
-		<-done
-
-		cmd.Process.Signal(syscall.SIGINT)
-	}()
-
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-
-	if err := cmd.Wait(); err != nil {
+	if err := cmd.Run(); err != nil {
 		return err
 	}
 
@@ -72,10 +54,6 @@ func openVLC(done <-chan struct{}, manifestPath, title string) error {
 }
 
 func main() {
-	defer func() {
-		fmt.Println("\rGood Bye.")
-	}()
-
 	flag.Parse()
 
 	if len(*token) == 0 {
@@ -94,18 +72,7 @@ func main() {
 		return
 	}
 
-	sigs := make(chan os.Signal, 1)
-	done := make(chan struct{}, 1)
-
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-
-	go func() {
-		<-sigs
-
-		done <- struct{}{}
-	}()
-
-	err = openVLC(done, fmt.Sprintf("%s/channels/%v/manifest.m3u8", mixerAPIBase, c.ID), fmt.Sprintf("%s | %s | %s", c.Token, c.Name, c.Type.Name))
+	err = openVLC(fmt.Sprintf("%s/channels/%v/manifest.m3u8", mixerAPIBase, c.ID), fmt.Sprintf("%s | %s | %s", c.Token, c.Name, c.Type.Name))
 	if err != nil {
 		fmt.Println("Error opening VLC", err)
 		return
